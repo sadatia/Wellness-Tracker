@@ -1,0 +1,106 @@
+<?php
+<?php
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+session_start();
+if (!isset($_SESSION['admin_id'])) {
+    header("Location: index.php");
+    exit;
+}
+require_once __DIR__ . '/../../src/config/database.php';
+$db = new Database();
+$pdo = $db->pdo;
+
+// Get selected date or default to today
+$selected_date = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
+
+// Fetch statuses for the selected date
+$stmt = $pdo->prepare("
+    SELECT u.username, u.position, w.status, w.submitted_at
+    FROM users u
+    LEFT JOIN wellness_status w ON u.id = w.user_id AND w.date = ?
+    WHERE u.is_admin = 0
+    ORDER BY u.id ASC
+");
+$stmt->execute([$selected_date]);
+$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// PDF download
+if (isset($_GET['download']) && $_GET['download'] === 'pdf') {
+    require_once __DIR__ . '/../../../vendor/autoload.php';
+    $html = '<h2>Daily Wellness Report</h2><table border="1" cellpadding="5"><tr><th>#</th><th>Username</th><th>Position</th><th>Status</th><th>Time</th></tr>';
+    foreach ($rows as $i => $row) {
+        $html .= '<tr><td>'.($i+1).'</td><td>'.htmlspecialchars($row['username']).'</td><td>'.htmlspecialchars($row['position']).'</td><td>'.htmlspecialchars($row['status'] ?? '-').'</td><td>'.htmlspecialchars($row['submitted_at'] ?? '-').'</td></tr>';
+    }
+    $html .= '</table>';
+    $mpdf = new \Mpdf\Mpdf();
+    $mpdf->WriteHTML($html);
+    $mpdf->Output('daily_report.pdf', 'D');
+    exit;
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Daily Report - Super Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: linear-gradient(135deg, #43cea2 0%, #185a9d 100%); min-height: 100vh; }
+        .report-panel { background: #fff; border-radius: 16px; padding: 2rem; box-shadow: 0 4px 24px rgba(0,0,0,0.1);}
+        @media print {
+            .no-print, .btn, form { display: none !important; }
+            .report-panel { box-shadow: none !important; }
+            body { background: #fff !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container my-5">
+        <div class="report-panel mx-auto" style="max-width: 900px;">
+            <div class="d-flex flex-column align-items-center mb-4">
+                <img src="/assets/img/logo.png" alt="Logo" style="height:48px;width:auto;">
+                <h2 class="text-primary fw-bold mt-2">Wellness Tracker</h2>
+            </div>
+            <form class="row g-3 mb-4 no-print" method="get">
+                <div class="col-auto">
+                    <input type="date" name="date" class="form-control" value="<?= htmlspecialchars($selected_date) ?>" required>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary">Show Report</button>
+                </div>
+            </form>
+            <div class="d-flex justify-content-end gap-2 mb-3 no-print">
+                <button class="btn btn-secondary" onclick="window.print()">Print</button>
+                <a href="?date=<?= urlencode($selected_date) ?>&download=pdf" class="btn btn-success">Download PDF</a>
+                <a href="manage_users.php" class="btn btn-secondary">Back</a>
+            </div>
+            <table class="table table-bordered table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Username</th>
+                        <th>Position</th>
+                        <th>Status</th>
+                        <th>Submitted At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($rows as $i => $row): ?>
+                    <tr>
+                        <td><?= $i+1 ?></td>
+                        <td><?= htmlspecialchars($row['username']) ?></td>
+                        <td><?= htmlspecialchars($row['position']) ?></td>
+                        <td><?= htmlspecialchars($row['status'] ?? '-') ?></td>
+                        <td><?= htmlspecialchars($row['submitted_at'] ?? '-') ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>
